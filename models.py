@@ -4,15 +4,17 @@ from utils import sample_uniform, get_mask
 
 def get_device(x):
     device= x.get_device()
-    if device == -1:
+    if device < 0:
         device= 'cpu'
     return device
 
-def input_padded(x, model, mask, pad_val):
+def input_padded(x, model, mask, pad_val, device=None):
     if mask is None:
         return model(x)
     
-    device= x.get_device()
+    if device is None:
+        device= x.get_device()
+        
     sq_x= x[mask]
     sq_out= model(sq_x)
     
@@ -94,7 +96,7 @@ class Generator(nn.Module):
             total_length=seqlen
         )
         
-        return input_padded(out, self.out_linear, mask, self.padval)
+        return input_padded(out, self.out_linear, mask, self.padval, device=device)
     
 class Encoder(nn.Module):
     def __init__(self, Z_dim, S_dim, F_dim, 
@@ -217,6 +219,8 @@ class fetsGan(nn.Module):
         super(fetsGan, self).__init__()
         
         self.fets= Z_dim > 0
+        self.Z_dim= Z_dim
+        self.S_dim= S_dim
         self.F_dim= F_dim
         self.padval= pad_val
         self.sampler= rsample
@@ -228,38 +232,7 @@ class fetsGan(nn.Module):
             self.E= Encoder(Z_dim, S_dim, F_dim, eta_dim, inp_dim, rsample, nhidden, layers, pad_val)
             self.LD= linearDis(Z_dim)
             
-    # def forward(self,net,inp,T=None, mask= None, s= None):
-    #     if net == 'G':
-    #         return self.G(inp,T, mask, s)
-        
-    #     elif net == 'E':
-    #         return self.E(inp,T, s)
-        
-    #     elif net == 'D':
-    #         return self.D(inp,T, s)
-        
-    #     elif net == 'LD':
-    #         return self.LD(inp)
-        
-        
-        
-        
-    
-if __name__ == '__main__':
-    # gen= Generator(10, 0, 4, eta_dim=4, inp_dim=50, rsample= sample_uniform, nhidden=100,layers=1, pad_val= -2)
-    # inp= torch.ones([64,10])
-    # gen(inp, [10]*64)
-    
-    # enc= Encoder(10,0,4)
-    # inp= torch.ones([64, 10, 4])
-    # enc(inp, [10]*64)
-    
-    # dis= Discriminator(4,0)
-    # inp= torch.ones([64, 10, 4])
-    # dis(inp, [10]*64)
-    
-    # dis= linearDis(10)
-    # inp= torch.ones([64,10])
-    # dis(inp)
-    
-    model= fetsGan(10, 0, 4)
+    def inf(self, T, device, mask=None, s=None):
+        with torch.no_grad():
+            zr= self.sampler([len(T), self.Z_dim]).to(device)
+            return self.G(zr, T, mask=mask,s=s)

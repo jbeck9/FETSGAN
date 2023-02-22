@@ -30,8 +30,6 @@ def fat(x,l,margin=0.1, usesum=False):
     mask= mse.argmax(dim=1)
     
     altmask= (mse > margin).long()
-    # mask= torch.argmax(altmask, dim=1)
-    # altmask= torch.argmax(altmask_bool, dim=1)
     maskmask= altmask.any(dim=1)
     
     mask[maskmask] = torch.argmax(altmask, dim=1)[maskmask]
@@ -48,13 +46,11 @@ def fat(x,l,margin=0.1, usesum=False):
 
 
 def get_dataset(name):
-    train_data= dataset.toy_loader(name)
+    train_data= dataset.load_data(name)
     return dataset.ETSDataset(train_data)
 
 
-def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, lsgan=True, lam= 10):
-    logger= data_logging.logger()
-    logger.launch()
+def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, lsgan=True, lam= 10, logger= None):
     
     if torch.cuda.is_available():
         dev= 'cuda'
@@ -176,26 +172,31 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
             
         epoch_bar.set_description(f"Epoch: {epoch}, Recon: {float(recon):.4f}, ADVF: {float(adv_d):.4f}, ADVE: {float(adv_ld):.4f}")
         
-        if net.fets:
-            logger.add_scalar("Scalars/Recon", float(recon))
-            logger.add_scalar("Scalars/Feature Adv", float(adv_d))
-            logger.add_scalar("Scalars/Embedding Adv", float(adv_ld))
-            logger.add_scalar("Scalars/G,E Objective", float(ge_objective))
-            
-            logger.proj(zx.detach().cpu())
-        else:
-            logger.add_scalar("Scalars/Feature Adv", float(adv_d))
-        logger.step()
+        if logger is not None:
+            if net.fets:
+                logger.add_scalar("Scalars/Recon", float(recon))
+                logger.add_scalar("Scalars/Feature Adv", float(adv_d))
+                logger.add_scalar("Scalars/Embedding Adv", float(adv_ld))
+                logger.add_scalar("Scalars/G,E Objective", float(ge_objective))
+                
+                logger.proj(zx.detach().cpu())
+                logger.plot(x[0].detach(),T[0], net, dev)
+            else:
+                logger.add_scalar("Scalars/Feature Adv", float(adv_d))
+            logger.step()
         
         
-            
-        
-
-if __name__ == '__main__':
-    ds= get_dataset('metro')
-    model= models.fetsGan(12, 0, 2)
+def inference(net, data, rsample= sample_uniform, logger= None):
+    net = net.cpu()
+    x= data.X[:,:, -net.F_dim:]
+    s= data.X[:,:, :-net.F_dim]
+    mask= get_mask(data.T)
     
-    train(model, ds, 0.001,batch_size= 128)
+    if logger is not None:
+        zx= net.E(x, data.T, s=s)
+        logger.embed(zx)
+    return net.inf(data.T, 'cpu', mask, s)
+    
     
         
     

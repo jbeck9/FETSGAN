@@ -5,15 +5,15 @@ import numpy as np
 def norm(x, min, max, a=-1, b=1):
     return (((b-a) * (x - min)) / (max - min)) + a
 
-def toy_loader(name):
-    if name in ['stock', 'metro', 'energy']:
+def load_data(name):
+    if name == 'sines':
+        return gen_sines()
+    
+    else:
         f = open(f"data/{name}.json", "r")
         js = f.read()
         f.close()
         return np.array(json.loads(js))
-    
-    elif name == 'sines':
-        return gen_sines()
 
 def gen_sines(nvar=1, T=100, samples=1000, amp_range= [0.2, 1], f_range= [1, 10], xo_range= [0, 2*np.pi]):
     output= np.empty([samples, T, nvar])
@@ -40,16 +40,17 @@ class ETSDataset(torch.utils.data.Dataset):
         
         time= np.count_nonzero((data[:,:,-1] != padval), 1).tolist()
         
-        self.T1 = torch.LongTensor(time)
-        self.X1 = torch.FloatTensor(data)
+        self.T = torch.LongTensor(time)
+        self.X = torch.FloatTensor(data)
         
-        self.max_length= max(self.T1)
+        self.max_length= max(self.T)
+        self.shape= data.shape
 
     def __len__(self):
-        return len(self.X1)
+        return len(self.X)
 
     def __getitem__(self, idx):
-        x= self.X1[idx]
-        t= self.T1[idx]
+        x= self.X[idx]
+        t= self.T[idx]
     
         return x,t
