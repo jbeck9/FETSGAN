@@ -1,3 +1,5 @@
+https://arxiv.org/abs/2308.15730
+
 # FETSGAN
 FETSGAN, RCGAN, RGAN Implementation. Synthetic time series data generation.
 
