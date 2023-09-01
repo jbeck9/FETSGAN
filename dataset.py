@@ -15,7 +15,7 @@ def load_data(name):
         f.close()
         return np.array(json.loads(js))
 
-def gen_sines(nvar=1, T=100, samples=1000, amp_range= [0.2, 1], f_range= [1, 10], xo_range= [0, 2*np.pi]):
+def gen_sines(nvar=1, T=100, samples=500, amp_range= [0.2, 1], f_range= [1, 10], xo_range= [0, 2*np.pi]):
     output= np.empty([samples, T, nvar])
     for n in range(samples):
         
@@ -34,14 +34,15 @@ def gen_sines(nvar=1, T=100, samples=1000, amp_range= [0.2, 1], f_range= [1, 10]
     return output
 
 class ETSDataset(torch.utils.data.Dataset):
-    def __init__(self, data, padval=-2):
+    def __init__(self, data, S_dim,  padval=-2):
         
         self.padval= padval
         
         time= np.count_nonzero((data[:,:,-1] != padval), 1).tolist()
         
         self.T = torch.LongTensor(time)
-        self.X = torch.FloatTensor(data)
+        self.X = torch.FloatTensor(data)[:,:,S_dim:]
+        self.S = torch.FloatTensor(data)[:,:,:S_dim]
         
         self.max_length= max(self.T)
         self.shape= data.shape
@@ -51,6 +52,7 @@ class ETSDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         x= self.X[idx]
+        s= self.S[idx]
         t= self.T[idx]
     
-        return x,t
+        return (x,s,t)

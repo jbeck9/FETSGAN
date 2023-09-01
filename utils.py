@@ -42,12 +42,7 @@ def fat(x,l,margin=0.1, usesum=False):
         else:
             loss[n]= x[mask[n]]
     
-    return loss.mean()
-
-
-def get_dataset(name):
-    train_data= dataset.load_data(name)
-    return dataset.ETSDataset(train_data)
+    return loss.mean(), mask.float().mean()
 
 
 def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, lsgan=True, lam= 10, logger= None):
@@ -88,13 +83,16 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
     
     epoch_bar = trange(epochs, desc=f"Epoch: 0, Recon: 0, ADVF: 0, ADVE: 0", position=0, leave=True)
     tuneset= False
+    # fat_index=1
     for epoch in epoch_bar:
-        for i,(X,T) in enumerate(dataloader):
+        for i,(X,S,T) in enumerate(dataloader):
             
-            X= X.to(dev)
+            # T= [int(fat_index)]*batch_size
+            # t= int(torch.randint(1,99,[1]))
+            # T= [t]*batch_size
 
-            x= X[:,:, -net.F_dim:].to(dev)
-            s= X[:,:, :-net.F_dim].to(dev)
+            x= X.to(dev)
+            s= S.to(dev)
             mask= get_mask(T).to(dev)
             
             #Encoding-Generator Training
@@ -105,7 +103,12 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 
                 zx= net.E(x,T, s=s)
                 G_x= net.G(zx, T, mask=mask, s=s)
-                recon= fat(G_x, x, thres)
+                
+                recon, fat_index= fat(G_x, x, thres)
+                # fat_index= int(fat_index) + 5
+                # print(fat_index)
+                
+                # recon= gan_loss(G_x, x)
                 
                 pred_ld= net.LD(zx)
                 adv_ld= gan_loss(pred_ld, torch.ones_like(pred_ld))
@@ -114,6 +117,7 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 adv_d= gan_loss(pred_d, torch.ones_like(pred_d))
                 
                 ge_objective= lam*recon + adv_d + adv_ld
+                # ge_objective= adv_ld
                 ge_objective.backward()
                 Go.step()
                 Eo.step()
@@ -121,7 +125,7 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
             else:
                 Go.zero_grad()
                 
-                G_x= net.G(None, T)
+                G_x= net.G(x, T, s=s)
                 
                 pred_d= net.D(G_x, T, mask, s)[mask]
                 adv_d= gan_loss(pred_d, torch.ones_like(pred_d))
@@ -169,18 +173,22 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 Es.step()
                 LDs.step()
             tuneset= True
-            
-        epoch_bar.set_description(f"Epoch: {epoch}, Recon: {float(recon):.4f}, ADVF: {float(adv_d):.4f}, ADVE: {float(adv_ld):.4f}")
+        
+        if net.fets:
+            epoch_bar.set_description(f"Epoch: {epoch}, Recon: {float(recon):.4f}, ADVF: {float(adv_d):.4f}, ADVE: {float(adv_ld):.4f}")
+        else:
+            epoch_bar.set_description(f"Epoch: {epoch}, ADVF: {float(adv_d):.4f}")
         
         if logger is not None:
             if net.fets:
                 logger.add_scalar("Scalars/Recon", float(recon))
-                logger.add_scalar("Scalars/Feature Adv", float(adv_d))
-                logger.add_scalar("Scalars/Embedding Adv", float(adv_ld))
+                logger.add_scalar("Scalars/Feature Adv", float(d_x_loss))
+                logger.add_scalar("Scalars/Embedding Adv", float(d_z_loss))
                 logger.add_scalar("Scalars/G,E Objective", float(ge_objective))
                 
-                logger.proj(zx.detach().cpu())
-                logger.plot(x[0].detach(),T[0], net, dev)
+                logger.proj(zx.detach().cpu(), 'Zx')
+                # logger.proj(net.sampler(zx.shape), 'rand')
+                logger.plot(x[0].detach(),T[0], net, dev, s=s[0].unsqueeze(0).detach())
             else:
                 logger.add_scalar("Scalars/Feature Adv", float(adv_d))
             logger.step()
@@ -188,13 +196,13 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
         
 def inference(net, data, rsample= sample_uniform, logger= None):
     net = net.cpu()
-    x= data.X[:,:, -net.F_dim:]
-    s= data.X[:,:, :-net.F_dim]
+    x= data.X
+    s= data.S
     mask= get_mask(data.T)
     
-    if logger is not None:
-        zx= net.E(x, data.T, s=s)
-        logger.embed(zx)
+    # if logger is not None and net.fets:
+    #     zx= net.E(x, data.T, s=s)
+    #     logger.embed(zx)
     return net.inf(data.T, 'cpu', mask, s)
     
     

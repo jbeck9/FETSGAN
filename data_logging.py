@@ -1,3 +1,4 @@
+import torch
 from torch.utils.tensorboard import SummaryWriter
 import threading
 import os
@@ -7,7 +8,41 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import shutil
-import time
+
+from datetime import datetime
+import json
+
+def save_output(model, output, max_runs=10):
+    current_datetime = datetime.now()
+    dir_name = current_datetime.strftime("%H:%M:%S_%m-%d-%Y")
+    dir_name= f"output/runs/{dir_name}"
+    
+    try: 
+        os.mkdir(dir_name) 
+    except OSError: 
+        pass
+    
+    runs= np.array([datetime.strptime(name,"%H:%M:%S_%m-%d-%Y") for name in os.listdir("output/runs")])
+    if len(runs) > max_runs:
+        direc= min(runs).strftime("%H:%M:%S_%m-%d-%Y")
+        shutil.rmtree(f"output/runs/{direc}")
+    
+    torch.save(model.state_dict(), f"{dir_name}/model.pth")
+    
+    jsdata= json.dumps(output.detach().cpu().tolist())
+    with open(f"{dir_name}/output.json", "w") as jsonFile:
+        jsonFile.write(jsdata)
+        
+    shutil.copyfile("params.yaml", f"{dir_name}/params.txt")
+    
+def load_model(model, path='latest'):
+    if path == 'latest':
+        runs= np.array([datetime.strptime(name,"%H:%M:%S_%m-%d-%Y") for name in os.listdir("output/runs")])
+        direc= max(runs).strftime("%H:%M:%S_%m-%d-%Y")
+        path= f"output/runs/{direc}/model.pth"
+    
+    model.load_state_dict(torch.load(path))
+        
 
 class logger():
     def __init__(self, logdir= 'output/logs'):
@@ -50,14 +85,14 @@ class logger():
     def embed(self, data, plot_dim=0):
         self.writer.add_embedding(data, global_step=self.index)
         
-    def proj(self, data, sample_rate= 100):
+    def proj(self, data, label, sample_rate= 100):
         if self.index % sample_rate == 0:
             
             plt.rcParams["figure.dpi"] = 200
             plt.rcParams["figure.figsize"] = [5,2]
             
             fig, ax= plt.subplots(1,1)
-            ax.scatter(data[:,0], data[:,1])
+            ax.scatter(data[:,0], data[:,1], label=label)
             
             self.writer.add_figure("2D Projection", fig, self.index)
             # self.writer.add_image("2D Projection", fig2img(fig, ax))
@@ -66,10 +101,10 @@ class logger():
             plt.rcParams["figure.dpi"] = self.default_plot_settings[0]
             plt.rcParams["figure.figsize"] = self.default_plot_settings[1]
     
-    def plot(self, x,T, net, device, sample_rate= 100, plot_index= 0):
+    def plot(self, x,T, net, device, sample_rate= 100, plot_index= 0, s=None):
         if self.index % sample_rate == 0:
             x= x.cpu()
-            rx= net.inf([T], device).cpu()[0]
+            rx= net.inf([T], device, s=s).cpu()[0]
             
             plt.rcParams["figure.dpi"] = 200
             plt.rcParams["figure.figsize"] = [5,2]

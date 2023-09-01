@@ -1,21 +1,26 @@
 #Model Parameters
-z_dim: 10
-s_dim: 0
-eta_dim: 4
+z_dim: 5
+s_dim: 6
+eta_dim: 5
 rsample: "sample_uniform"
-nhidden: 100
-layers: 1
+nhidden: 64
+layers: 2
 pad_val: -2
 
 #Training Parameters
-dataset: "metro"
-learning_rate: 0.001
+dataset: "bb"
+learning_rate: 0.002
 batch_size: 128
-epochs: 2000
-dis_coef: 2
+epochs: 10000
+dis_coef: 0.8
 fat_thres: 0.1
 lsgan: True
 lambda: 10
 use_logger: True
 
 #Procedure
+load_model: False
+run_training: True
+run_inf: True
+save_output: True
+
