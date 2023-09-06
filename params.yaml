@@ -1,6 +1,6 @@
 #Model Parameters
 z_dim: 5
-s_dim: 6
+s_dim: 0
 eta_dim: 5
 rsample: "sample_uniform"
 nhidden: 64
@@ -8,7 +8,7 @@ layers: 2
 pad_val: -2
 
 #Training Parameters
-dataset: "bb"
+dataset: "sines"
 learning_rate: 0.002
 batch_size: 128
 epochs: 10000

@@ -8,6 +8,8 @@ def get_device(x):
         device= 'cpu'
     return device
 
+
+
 def input_padded(x, model, mask, pad_val, device=None):
     if mask is None:
         return model(x)
@@ -98,6 +100,46 @@ class Generator(nn.Module):
         
         return input_padded(out, self.out_linear, mask, self.padval, device=device)
     
+class TEncoder(nn.Module):
+    def __init__(self, Z_dim, S_dim, F_dim, 
+                 eta_dim, inp_dim, rsample, nhidden, layers, pad_val, nhead=2):
+        super(TEncoder, self).__init__()
+        
+        self.layers= layers
+        self.nhidden= nhidden
+        self.S_dim= S_dim
+        self.etadim= eta_dim
+        self.padval= pad_val
+        self.rsample= rsample
+        
+        
+        encoder_layer = nn.TransformerEncoderLayer(d_model=nhidden, nhead=nhead, batch_first= True)
+        
+        self.model = nn.TransformerEncoder(encoder_layer, num_layers=layers)
+        
+        self.in_linear= nn.Linear(F_dim + S_dim, nhidden)
+        
+        self.out_linear= nn.Sequential(nn.Linear(nhidden + eta_dim, nhidden),
+                                        nn.LeakyReLU(0.1),
+                                        nn.Linear(nhidden, Z_dim))
+        
+        
+    def forward(self, x, T_in, s=None):
+        device= get_device(x)
+        mask= get_mask(T_in)
+        
+        noise= self.rsample([x.shape[0], self.etadim]).to(device)
+        
+        if self.S_dim > 0:
+            x= torch.cat([x, s], dim=-1)
+        
+        x= input_padded(x, self.in_linear, mask, self.padval)
+        enc_out= self.model(x, src_key_padding_mask= ~mask.to(device))
+        
+        out= torch.cat([enc_out[:,-1,:], noise], dim=-1)
+        
+        return self.out_linear(out)
+    
 class Encoder(nn.Module):
     def __init__(self, Z_dim, S_dim, F_dim, 
                  eta_dim, inp_dim, rsample, nhidden, layers, pad_val):
@@ -124,7 +166,6 @@ class Encoder(nn.Module):
         
     def forward(self, x,T_in, s= None):
         device= get_device(x)
-        seqlen= max(T_in)
         
         noise= self.rsample([x.shape[0], self.etadim]).to(device)
         # x= torch.cat([x,noise], dim=-1)
