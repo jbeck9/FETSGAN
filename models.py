@@ -50,12 +50,12 @@ class Generator(nn.Module):
             batch_first=True
         )
         
-        self.out_linear= nn.Sequential(nn.Linear(nhidden + eta_dim, nhidden),
-                                        nn.LeakyReLU(0.1),
+        self.out_linear= nn.Sequential(nn.Linear(nhidden + eta_dim + self.Zcat, nhidden),
+                                        nn.ReLU(),
                                         nn.Linear(nhidden, F_dim))
         if Z_dim > 0:
             self.emb_hidden=nn.Sequential(nn.Linear(Z_dim, nhidden),
-                                          nn.LeakyReLU(0.1),
+                                          nn.ReLU(),
                                           nn.Linear(nhidden, nhidden*layers))
         
     def forward(self, z, T_in, mask=None, s= None):
@@ -70,15 +70,15 @@ class Generator(nn.Module):
         if self.Z_dim > 0:
             init_hidden= self.emb_hidden(z).reshape(z.shape[0],self.layers, -1).permute((1,0,2))
             
-            z= z.unsqueeze(1).tile([1, seqlen, 1])
+            zi= z.unsqueeze(1).tile([1, seqlen, 1])
         else:
-            z= self.rsample([z.shape[0], seqlen, self.inpdim]).to(device)
+            zi= self.rsample([z.shape[0], seqlen, self.inpdim]).to(device)
         
         if self.S_dim > 0:
-            z= torch.cat([z, s], dim=-1)
-            
+            zi= torch.cat([zi, s[:,:seqlen]], dim=-1)
+        
         z_pack = nn.utils.rnn.pack_padded_sequence(
-            input=z, 
+            input=zi, 
             lengths=T_in, 
             batch_first=True, 
             enforce_sorted=False
@@ -96,7 +96,7 @@ class Generator(nn.Module):
             padding_value=self.padval,
             total_length=seqlen
         )
-        out= torch.cat([out, noise], dim=-1)
+        out= torch.cat([out, noise, zi], dim=-1)
         
         return input_padded(out, self.out_linear, mask, self.padval, device=device)
     
@@ -120,7 +120,7 @@ class TEncoder(nn.Module):
         self.in_linear= nn.Linear(F_dim + S_dim, nhidden)
         
         self.out_linear= nn.Sequential(nn.Linear(nhidden + eta_dim, nhidden),
-                                        nn.LeakyReLU(0.1),
+                                        nn.ReLU(),
                                         nn.Linear(nhidden, Z_dim))
         
         
@@ -190,7 +190,7 @@ class Encoder(nn.Module):
     
 class Discriminator(nn.Module):
     def __init__(self, F_dim,S_dim, 
-                 inp_dim= 50,nhidden=32, layers=2, pad_val= -2):
+                 inp_dim=50, nhidden=32, layers=2, pad_val= -2):
         super(Discriminator, self).__init__()
         
         self.S_dim= S_dim
@@ -198,30 +198,26 @@ class Discriminator(nn.Module):
         self.padval= pad_val
         
         self.D_rnn = nn.GRU(
-            input_size= inp_dim,
+            input_size= self.Zcat,
             hidden_size=nhidden, 
             num_layers=layers, 
             batch_first=True
         )
         
-        self.out_linear= nn.Sequential(nn.Linear(nhidden, nhidden),
+        self.out_linear= nn.Sequential(nn.Linear(nhidden + self.Zcat, nhidden),
                                         nn.LeakyReLU(0.2),
                                         nn.Linear(nhidden, 1))
-        
-        self.in_linear= nn.Sequential(nn.Linear(self.Zcat, nhidden),
-                                      nn.LeakyReLU(0.2),
-                                      nn.Linear(nhidden, inp_dim))
         
     def forward(self, x,T_in, mask= None, s= None):
         seqlen= max(T_in)
         
-        if self.S_dim != 0:
-            x= torch.cat([x, s], dim=-1)
+        xi = x + 0.02 * torch.randn_like(x)
         
-        x= self.in_linear(x)
+        if self.S_dim != 0:
+            xi= torch.cat([xi, s], dim=-1)
         
         x_pack = torch.nn.utils.rnn.pack_padded_sequence(
-            input=x, 
+            input=xi, 
             lengths=T_in, 
             batch_first=True, 
             enforce_sorted=False
@@ -236,6 +232,7 @@ class Discriminator(nn.Module):
             total_length=seqlen
         )
         
+        out= torch.cat([out, xi], dim=-1)
         return input_padded(out, self.out_linear, mask, self.padval)
     
 class linearDis(nn.Module):
@@ -272,6 +269,7 @@ class fetsGan(nn.Module):
             self.LD= linearDis(Z_dim)
             
     def inf(self, T, device, mask=None, s=None):
-        with torch.no_grad():
-            zr= self.sampler([len(T), self.Z_dim]).to(device)
-            return self.G(zr, T, mask=mask,s=s)
+        
+        # with torch.no_grad():
+        zr= self.sampler([len(T), self.Z_dim]).to(device)
+        return self.G(zr, T, mask=mask,s=s)

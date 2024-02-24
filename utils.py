@@ -104,6 +104,8 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 zx= net.E(x,T, s=s)
                 G_x= net.G(zx, T, mask=mask, s=s)
                 
+                G_rand= net.inf(T, dev, mask=mask, s=s)
+                
                 recon, fat_index= fat(G_x, x, thres)
                 # fat_index= int(fat_index) + 5
                 # print(fat_index)
@@ -113,7 +115,7 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 pred_ld= net.LD(zx)
                 adv_ld= gan_loss(pred_ld, torch.ones_like(pred_ld))
                 
-                pred_d= net.D(G_x, T, mask, s)[mask]
+                pred_d= net.D(G_rand, T, mask, s)[mask]
                 adv_d= gan_loss(pred_d, torch.ones_like(pred_d))
                 
                 ge_objective= lam*recon + adv_d + adv_ld
@@ -138,7 +140,7 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
             #------------------
             Do.zero_grad()
             
-            pred_fake_x= net.D(G_x.detach(), T, mask, s)[mask]
+            pred_fake_x= net.D(G_rand.detach(), T, mask, s)[mask]
             pred_real_x= net.D(x,T, mask, s)[mask]
             
             l_fake_x= gan_loss(pred_fake_x, torch.zeros_like(pred_fake_x))
@@ -188,7 +190,7 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 
                 logger.proj(zx.detach().cpu(), 'Zx')
                 # logger.proj(net.sampler(zx.shape), 'rand')
-                logger.plot(x[0].detach(),T[0], net, dev, s=s[0].unsqueeze(0).detach())
+                logger.plot(x[0].detach(), G_x[0].detach(),T[0], net, dev, s=s[0].unsqueeze(0).detach())
             else:
                 logger.add_scalar("Scalars/Feature Adv", float(adv_d))
             logger.step()

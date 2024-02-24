@@ -101,16 +101,18 @@ class logger():
             plt.rcParams["figure.dpi"] = self.default_plot_settings[0]
             plt.rcParams["figure.figsize"] = self.default_plot_settings[1]
     
-    def plot(self, x,T, net, device, sample_rate= 100, plot_index= 0, s=None):
+    def plot(self, x, recon, T, net, device, sample_rate= 20, plot_index= 0, s=None):
         if self.index % sample_rate == 0:
             x= x.cpu()
-            rx= net.inf([T], device, s=s).cpu()[0]
+            recon= recon.cpu()
+            rx= net.inf([T], device, s=s).detach().cpu()[0]
             
             plt.rcParams["figure.dpi"] = 200
             plt.rcParams["figure.figsize"] = [5,2]
             
             fig, ax= plt.subplots(1,1)
             ax.plot(x[:,plot_index], label="x")
+            ax.plot(recon[:,plot_index], label="recon")
             ax.plot(rx[:,plot_index], label= "$\hat{x}$")
             plt.legend()
             

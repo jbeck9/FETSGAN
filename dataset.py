@@ -15,7 +15,7 @@ def load_data(name):
         f.close()
         return np.array(json.loads(js))
 
-def gen_sines(nvar=1, T=100, samples=500, amp_range= [0.2, 1], f_range= [1, 10], xo_range= [0, 2*np.pi]):
+def gen_sines(nvar=1, T=100, samples=1000, amp_range= [0.2, 1], f_range= [1, 10], xo_range= [0, 2*np.pi]):
     output= np.empty([samples, T, nvar])
     for n in range(samples):
         
