@@ -101,26 +101,35 @@ class logger():
             plt.rcParams["figure.dpi"] = self.default_plot_settings[0]
             plt.rcParams["figure.figsize"] = self.default_plot_settings[1]
     
-    def plot(self, x, recon, T, net, device, sample_rate= 20, plot_index= 0, s=None):
+    def plot(self, x, recon, xhat, T, net, device, sample_rate= 20, plot_index= 0, s=None):
         if self.index % sample_rate == 0:
             x= x.cpu()
             recon= recon.cpu()
-            rx= net.inf([T], device, s=s).detach().cpu()[0]
+            xhat= xhat.cpu()
             
             plt.rcParams["figure.dpi"] = 200
             plt.rcParams["figure.figsize"] = [5,2]
             
-            fig, ax= plt.subplots(1,1)
-            ax.plot(x[:,plot_index], label="x")
-            ax.plot(recon[:,plot_index], label="recon")
-            ax.plot(rx[:,plot_index], label= "$\hat{x}$")
-            plt.legend()
+            for i in range(2):
             
-            self.writer.add_figure("Sample Plot", fig, self.index)
-            plt.close(fig)
+                fig, ax= plt.subplots(1,1)
+                ax.plot(x[:T,i], label="x")
+                ax.plot(recon[:T,i], label="recon")
+                ax.plot(xhat[:T,i], label= "$\hat{x}$")
+                plt.legend()
+                
+                self.writer.add_figure(f"Sample Plot {i}", fig, self.index)
+                plt.close(fig)
             
             plt.rcParams["figure.dpi"] = self.default_plot_settings[0]
             plt.rcParams["figure.figsize"] = self.default_plot_settings[1]
+            
+def legend_without_duplicate_labels(ax):
+    handles, labels = ax.get_legend_handles_labels()
+    unique = [(h, l) for i, (h, l) in enumerate(zip(handles, labels)) if l not in labels[:i]]
+    l= ax.legend(*zip(*unique), fontsize= '13', edgecolor= 'black', ncols=1)#, loc="upper left")
+    l.get_frame().set_alpha(None)
+    l.get_frame().set_facecolor((0, 0, 1, 0))
             
             
     def ts2img(self, ts, index=0):

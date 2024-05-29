@@ -24,8 +24,8 @@ def get_mask(T):
         
     return out.bool()
 
-def fat(x,l,margin=0.1, usesum=False):
-    mse= torch.square(x - l).mean(dim=-1)
+def fat(mse_nr,margin=0.1):
+    mse= mse_nr.mean(dim=-1)
     
     mask= mse.argmax(dim=1)
     
@@ -34,15 +34,16 @@ def fat(x,l,margin=0.1, usesum=False):
     
     mask[maskmask] = torch.argmax(altmask, dim=1)[maskmask]
     
-    loss=torch.empty([x.shape[0]]).cuda()
+    loss=torch.empty([mse.shape[0]]).cuda()
     for n,x in enumerate(mse):
-        if usesum == True:
-            ind=mask[n] + 1
-            loss[n]= x[:ind].mean()
-        else:
-            loss[n]= x[mask[n]]
+        # if maskmask[n]:
+        #     loss[n]= x[mask[n]]
+        # else:
+        #     loss[n] = mse[n].mean()
+            
+        loss[n]= x[mask[n]]
     
-    return loss.mean(), mask.float().mean()
+    return loss.mean(), mask.float()
 
 
 def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, lsgan=True, lam= 10, logger= None):
@@ -69,7 +70,7 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
     
     
     if net.fets:
-        LDo= optim.Adam(net.LD.parameters(), lr=dis_coef*lr)
+        LDo= optim.Adam(net.LD.parameters(), lr=0.8*lr)
         Eo= optim.Adam(net.E.parameters(), lr=lr)
         
         LDs= optim.lr_scheduler.ExponentialLR(LDo, 0.1)
@@ -80,6 +81,10 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
         gan_loss= nn.MSELoss()
     else:
         gan_loss= nn.BCEWithLogitsLoss()
+        
+    minval=0
+    mse_loss= nn.MSELoss(reduction= 'none')
+    bce_loss= nn.BCEWithLogitsLoss(reduction= 'none')
     
     epoch_bar = trange(epochs, desc=f"Epoch: 0, Recon: 0, ADVF: 0, ADVE: 0", position=0, leave=True)
     tuneset= False
@@ -90,7 +95,8 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
             # T= [int(fat_index)]*batch_size
             # t= int(torch.randint(1,99,[1]))
             # T= [t]*batch_size
-
+            
+            # T= [20] * batch_size
             x= X.to(dev)
             s= S.to(dev)
             mask= get_mask(T).to(dev)
@@ -101,12 +107,27 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 Go.zero_grad()
                 Eo.zero_grad()
                 
-                zx= net.E(x,T, s=s)
-                G_x= net.G(zx, T, mask=mask, s=s)
+                b_mask= x != minval
+                b= b_mask.double()
                 
-                G_rand= net.inf(T, dev, mask=mask, s=s)
+                weights= torch.ones_like(b)
+                weights[~b_mask] = 15
                 
-                recon, fat_index= fat(G_x, x, thres)
+                zx, r_mean= net.E(x,T, s=s, return_rweights= True)
+                G_x, G_x_bool= net.G(zx, T, mask=mask, s=s)
+                G_x[~b_mask] = minval
+                
+                G_rand, G_rand_bool= net.inf(T, dev, mask=mask, s=s)
+                tmask= mask * (torch.sigmoid(G_rand_bool) < 0.4)[:,:,0]
+                G_rand[tmask] = minval
+                
+                mse_x= mse_loss(G_x, x)
+                mse_x[:,:,-1] *= 4
+                
+                # mse_x[mask]= mse_x[mask] / (torch.abs(x[mask]) + 1)
+                
+                bce_x= (weights[mask] * bce_loss(G_x_bool[mask], b[mask])).mean()
+                recon, fat_index= fat(mse_x, thres)
                 # fat_index= int(fat_index) + 5
                 # print(fat_index)
                 
@@ -115,11 +136,29 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 pred_ld= net.LD(zx)
                 adv_ld= gan_loss(pred_ld, torch.ones_like(pred_ld))
                 
-                pred_d= net.D(G_rand, T, mask, s)[mask]
-                adv_d= gan_loss(pred_d, torch.ones_like(pred_d))
+                pred_d= net.D(G_x, T, mask, s)
+                pred_d_inf= net.D(G_rand, T, mask, s)
                 
-                ge_objective= lam*recon + adv_d + adv_ld
-                # ge_objective= adv_ld
+                label_real= torch.ones_like(pred_d)
+                label_real[~mask] = net.padval
+                
+                label_fake= torch.zeros_like(pred_d)
+                label_fake[~mask] = net.padval
+                
+                adv_d_1, d_fat_1= fat(mse_loss(pred_d, label_real), 0.9)
+                adv_d_2, d_fat_2= fat(mse_loss(pred_d_inf, label_real), 0.9)
+                
+                # print(d_fat_2[0])
+                # print(mse_loss(pred_d_inf, label_real)[0])
+                # input()
+                
+                # adv_d_1= mse_loss(pred_d, label_real)[mask].mean()
+                # adv_d_2= mse_loss(pred_d_inf, label_real)[mask].mean()
+                
+                adv_d= adv_d_1 + adv_d_2
+                
+                ge_objective= lam*recon + adv_d + adv_ld + 0.1*bce_x
+                # ge_objective= lam*recon + adv_ld
                 ge_objective.backward()
                 Go.step()
                 Eo.step()
@@ -140,13 +179,20 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
             #------------------
             Do.zero_grad()
             
-            pred_fake_x= net.D(G_rand.detach(), T, mask, s)[mask]
-            pred_real_x= net.D(x,T, mask, s)[mask]
+            pred_fake_x= net.D(G_x.detach(), T, mask, s)
+            pred_fake_x_inf= net.D(G_rand.detach(), T, mask, s)
+            pred_real_x= net.D(x,T, mask, s)
             
-            l_fake_x= gan_loss(pred_fake_x, torch.zeros_like(pred_fake_x))
-            l_real_x= gan_loss(pred_real_x, torch.ones_like(pred_real_x))
             
-            d_x_loss= 0.5*(l_fake_x + l_real_x)
+            l_fake_x= gan_loss(pred_fake_x[mask], torch.zeros_like(pred_fake_x[mask]))
+            l_fake_x_inf= gan_loss(pred_fake_x_inf[mask], torch.zeros_like(pred_fake_x[mask]))
+            l_real_x= gan_loss(pred_real_x[mask], torch.ones_like(pred_real_x[mask]))
+            
+            # l_fake_x, _= fat(mse_loss(pred_fake_x, label_fake), 0.8)
+            # l_fake_x_inf, _= fat(mse_loss(pred_fake_x_inf, label_fake), 0.8)
+            # l_real_x, _= fat(mse_loss(pred_real_x, label_real), 0.8)
+            
+            d_x_loss= 0.25*l_fake_x + 0.25*l_fake_x_inf + 0.5*l_real_x
             d_x_loss.backward()
             
             Do.step()
@@ -184,28 +230,47 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
         if logger is not None:
             if net.fets:
                 logger.add_scalar("Scalars/Recon", float(recon))
+                logger.add_scalar("Scalars/FAT Index", float(fat_index.mean()))
+                logger.add_scalar("Scalars/D FAT Index", float(d_fat_2.mean()))
+                logger.add_scalar("Scalars/Dropout", float(bce_x))
+                logger.add_scalar("Scalars/Feature Adv Gen", float(adv_d))
                 logger.add_scalar("Scalars/Feature Adv", float(d_x_loss))
                 logger.add_scalar("Scalars/Embedding Adv", float(d_z_loss))
                 logger.add_scalar("Scalars/G,E Objective", float(ge_objective))
+                logger.add_scalar("Scalars/Random Weight", float(r_mean))
                 
                 logger.proj(zx.detach().cpu(), 'Zx')
                 # logger.proj(net.sampler(zx.shape), 'rand')
-                logger.plot(x[0].detach(), G_x[0].detach(),T[0], net, dev, s=s[0].unsqueeze(0).detach())
+                logger.plot(x[0].detach(), G_x[0].detach(), G_rand[0].detach(),T[0], net, dev, s=s[0].unsqueeze(0).detach())
             else:
                 logger.add_scalar("Scalars/Feature Adv", float(adv_d))
             logger.step()
         
         
-def inference(net, data, rsample= sample_uniform, logger= None):
+def inference(net, data, rsample= sample_uniform):
     net = net.cpu()
-    x= data.X
-    s= data.S
+    x= data.X.cpu()
+    s= data.S.cpu()
     mask= get_mask(data.T)
     
     # if logger is not None and net.fets:
     #     zx= net.E(x, data.T, s=s)
     #     logger.embed(zx)
-    return net.inf(data.T, 'cpu', mask, s)
+    out, b= net.inf(data.T, 'cpu', mask, s)
+    tmask= mask * (torch.sigmoid(b) < 0.4)[:,:,0]
+    out[tmask] = 0
+    
+    return out
+
+def one_step_inf(net, s, zr):
+    T= [1] * s.shape[0]
+    mask= get_mask(T)
+    
+    out, b= net.inf(T, models.get_device(s), mask, s, reset_hidden= False, zr= zr)
+    tmask= mask * (torch.sigmoid(b) < 0.4)[:,:,0]
+    out[tmask] = 0
+    
+    return out
     
     
         

@@ -42,15 +42,25 @@ class Generator(nn.Module):
         
         self.Zcat= Z_dim + S_dim
         
+        self.hidden= None
+        
         
         self.G_rnn = nn.GRU(
-            input_size= self.Zcat, 
+            input_size= self.inpdim, 
             hidden_size= nhidden, 
             num_layers=layers, 
             batch_first=True
         )
         
-        self.out_linear= nn.Sequential(nn.Linear(nhidden + eta_dim + self.Zcat, nhidden),
+        self.in_linear= nn.Sequential(nn.Linear(eta_dim + self.Zcat, nhidden),
+                                        nn.ReLU(),
+                                        nn.Linear(nhidden, self.inpdim))
+        
+        self.out_linear= nn.Sequential(nn.Linear(nhidden + self.Zcat + eta_dim, nhidden),
+                                        nn.ReLU(),
+                                        nn.Linear(nhidden, F_dim))
+        
+        self.out_bool= nn.Sequential(nn.Linear(nhidden + self.Zcat + eta_dim, nhidden),
                                         nn.ReLU(),
                                         nn.Linear(nhidden, F_dim))
         if Z_dim > 0:
@@ -58,7 +68,7 @@ class Generator(nn.Module):
                                           nn.ReLU(),
                                           nn.Linear(nhidden, nhidden*layers))
         
-    def forward(self, z, T_in, mask=None, s= None):
+    def forward(self, z, T_in, mask=None, s= None, reset_hidden= True):
         seqlen= max(T_in)
         
         if mask is None and min(T_in) < seqlen:
@@ -68,26 +78,34 @@ class Generator(nn.Module):
         noise= self.rsample([z.shape[0], seqlen, self.etadim]).to(device)
         
         if self.Z_dim > 0:
-            init_hidden= self.emb_hidden(z).reshape(z.shape[0],self.layers, -1).permute((1,0,2))
-            
+            if reset_hidden or self.hidden == None:
+                self.hidden= self.emb_hidden(z).reshape(z.shape[0],self.layers, -1).permute((1,0,2))
             zi= z.unsqueeze(1).tile([1, seqlen, 1])
         else:
             zi= self.rsample([z.shape[0], seqlen, self.inpdim]).to(device)
         
         if self.S_dim > 0:
-            zi= torch.cat([zi, s[:,:seqlen]], dim=-1)
+            si= s[:,:seqlen]
+            # s_noise= 0.05 * si * torch.randn_like(si)
+            # si= si + s_noise
+            
+            zi= torch.cat([zi, si], dim=-1)
+            
+        zi= torch.cat([zi, noise], dim=-1)
+        
+        zi_emb= input_padded(zi, self.in_linear, mask, self.padval, device=device)
         
         z_pack = nn.utils.rnn.pack_padded_sequence(
-            input=zi, 
+            input=zi_emb, 
             lengths=T_in, 
             batch_first=True, 
             enforce_sorted=False
         )
         
         if self.Z_dim > 0:
-            out, _ = self.G_rnn(z_pack, init_hidden)
+            out, self.hidden = self.G_rnn(z_pack, self.hidden)
         else:
-            out, _ = self.G_rnn(z_pack)
+            out, self.hidden = self.G_rnn(z_pack)
             
         
         out, T_out = torch.nn.utils.rnn.pad_packed_sequence(
@@ -96,9 +114,12 @@ class Generator(nn.Module):
             padding_value=self.padval,
             total_length=seqlen
         )
-        out= torch.cat([out, noise, zi], dim=-1)
         
-        return input_padded(out, self.out_linear, mask, self.padval, device=device)
+        out= torch.cat([out, zi], dim=-1)
+        fout= input_padded(out, self.out_linear, mask, self.padval, device=device)
+        bout= input_padded(out, self.out_bool, mask, self.padval, device=device)
+        
+        return fout, bout
     
 class TEncoder(nn.Module):
     def __init__(self, Z_dim, S_dim, F_dim, 
@@ -150,6 +171,7 @@ class Encoder(nn.Module):
         self.Zcat= F_dim + S_dim
         self.padval= pad_val
         self.rsample= rsample
+        self.Z_dim= Z_dim
 
         
         self.E_rnn = nn.GRU(
@@ -159,15 +181,20 @@ class Encoder(nn.Module):
             batch_first=True,
         )
         
-        self.out_linear= nn.Sequential(nn.Linear(nhidden + eta_dim, nhidden),
+        self.out_linear= nn.Sequential(nn.Linear(nhidden, nhidden),
                                         nn.LeakyReLU(0.1),
                                         nn.Linear(nhidden, Z_dim))
         
+        self.out_noise_weights= nn.Sequential(nn.Linear(nhidden, nhidden),
+                                        nn.LeakyReLU(0.1),
+                                        nn.Linear(nhidden, Z_dim),
+                                        nn.Sigmoid())
         
-    def forward(self, x,T_in, s= None):
+        
+    def forward(self, x,T_in, s= None, return_rweights= False):
         device= get_device(x)
         
-        noise= self.rsample([x.shape[0], self.etadim]).to(device)
+        noise= self.rsample([x.shape[0], self.Z_dim]).to(device)
         # x= torch.cat([x,noise], dim=-1)
         
         if self.S_dim > 0:
@@ -184,9 +211,18 @@ class Encoder(nn.Module):
         
         _, out = self.E_rnn(x_pack)
         
-        out= torch.cat([out[-1], noise], dim=-1)
+        eout= self.out_linear(out[-1])
+        nweights= self.out_noise_weights(out[-1])
         
-        return self.out_linear(out)
+        out= eout + nweights * (noise - eout)
+        
+        out= torch.clamp(out, -1, 1)
+        
+        if return_rweights:
+            return out, float(nweights.mean())
+        else:
+            return out
+        
     
 class Discriminator(nn.Module):
     def __init__(self, F_dim,S_dim, 
@@ -198,26 +234,40 @@ class Discriminator(nn.Module):
         self.padval= pad_val
         
         self.D_rnn = nn.GRU(
-            input_size= self.Zcat,
+            input_size= inp_dim,
             hidden_size=nhidden, 
             num_layers=layers, 
             batch_first=True
         )
         
+        self.in_linear= nn.Sequential(nn.Linear(self.Zcat, nhidden),
+                                        nn.LeakyReLU(0.1),
+                                        nn.Dropout1d(0.05),
+                                        nn.Linear(nhidden, inp_dim))
+        
         self.out_linear= nn.Sequential(nn.Linear(nhidden + self.Zcat, nhidden),
-                                        nn.LeakyReLU(0.2),
+                                        nn.LeakyReLU(0.1),
+                                        nn.Dropout1d(0.05),
                                         nn.Linear(nhidden, 1))
         
     def forward(self, x,T_in, mask= None, s= None):
         seqlen= max(T_in)
         
-        xi = x + 0.02 * torch.randn_like(x)
+        xi= torch.clone(x)
         
         if self.S_dim != 0:
             xi= torch.cat([xi, s], dim=-1)
+            
+        # xi = xi + 0.05*torch.randn_like(xi)
+            
+        skipmask= (torch.rand_like(mask.float()) < 0.2).bool()
+        skipmask = skipmask * mask
+        xi[skipmask] = 0
+        
+        xi_emb= input_padded(xi, self.in_linear, mask, self.padval)
         
         x_pack = torch.nn.utils.rnn.pack_padded_sequence(
-            input=xi, 
+            input=xi_emb, 
             lengths=T_in, 
             batch_first=True, 
             enforce_sorted=False
@@ -268,8 +318,10 @@ class fetsGan(nn.Module):
             self.E= Encoder(Z_dim, S_dim, F_dim, eta_dim, inp_dim, rsample, nhidden, layers, pad_val)
             self.LD= linearDis(Z_dim)
             
-    def inf(self, T, device, mask=None, s=None):
+    def inf(self, T, device, mask=None, s=None, reset_hidden= True, zr= None):
         
         # with torch.no_grad():
-        zr= self.sampler([len(T), self.Z_dim]).to(device)
-        return self.G(zr, T, mask=mask,s=s)
+        if zr == None:
+            zr= self.sampler([len(T), self.Z_dim]).to(device)
+        
+        return self.G(zr, T, mask=mask,s=s, reset_hidden= reset_hidden)
