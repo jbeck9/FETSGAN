@@ -41,12 +41,13 @@ def main(p):
     
     if p['save_output']:
         print("Saving Model...")
-        data_logging.save_output(model, output)
+        data_logging.save_output(model)
     
 
 if __name__ == '__main__':
     with open('params.yaml') as file:
         params = yaml.full_load(file)
+        
     # out= main(params)
     
     
@@ -55,6 +56,10 @@ if __name__ == '__main__':
     import torch
     import numpy as np
     
+    import random
+    import pickle
+    random.seed(1)
+    
     p= params
     data= dataset.ETSDataset(dataset.load_data(p['dataset']), p['s_dim'])
     model= models.fetsGan(p['z_dim'], p['s_dim'], data.X.shape[-1], 
@@ -62,6 +67,7 @@ if __name__ == '__main__':
                           nhidden= p['nhidden'], layers= p['layers'], pad_val= p['pad_val'])
     data_logging.load_model(model)
     
+    model.eval()
     torch.save(model.G.state_dict(), "pem.pth")
     
     # raise
@@ -70,7 +76,7 @@ if __name__ == '__main__':
     
     # data.S[:,:,0] = 0.52* torch.ones_like(data.S[:,:,0])
     
-    nruns= 5
+    nruns= 2
     infs=[]
     dr= []
     with torch.no_grad():
@@ -90,28 +96,48 @@ if __name__ == '__main__':
     # out= out.detach().cpu()
             
     # sns.kdeplot(np.array(dr))
-            
+    
+    # pickle.dump(data.X, open('X.p', 'wb'))
+    # pickle.dump(S, open('S.p', 'wb'))
+    # pickle.dump(infs, open('X_hat_list.p', 'wb'))
+    # raise
     
     fig,ax= plt.subplots(1,1)
-    for i in range(data.shape[0]):
-        i = i*5
+    for _ in range(data.shape[0]):
+        i = np.random.randint(0, data.shape[0])
         # plt.plot(data.S[i, :data.T[i], 3], label= "vlead (radar) (smoothed)", c= 'green')
-        plt.plot(data.S[i, :data.T[i], 3] - data.X[i, :data.T[i], 1], label= "model", c= 'blue')
-        plt.plot(data.S[i, :data.T[i], 3], label= "vLead", c= 'red')
-        # for n in range(nruns):
-            # plt.plot(infs[n][i, :data.T[i], 1], label= "$\hat{x}$", c= 'red', alpha= 0.4)
+        realmask= data.X[i, :data.T[i], 0] == 0
+        real_traj= data.S[i, :data.T[i], 3] - data.X[i, :data.T[i], 1]
+        real_traj[realmask] = 0
+        # plt.plot(real_traj, label= "model", c= 'blue')
+        plt.plot(data.S[i, :data.T[i], 3], label= "$Y$", c= 'green')
+        plt.plot(real_traj, label= "$Y - x$", c= 'blue')
+        for n in range(nruns):
+            genmask= infs[n][i, :data.T[i], 0] == 0
+            gen_traj= data.S[i, :data.T[i], 3] - infs[n][i, :data.T[i], 1]
+            gen_traj[genmask] = 0
+            
+            plt.plot(gen_traj, label= "$Y - \hat{x}$", c= 'red', alpha= 0.4)
             
         # plt.plot(out[i, :data.T[i]], label= "$single_x$", c= 'purple')
             
         # plt.plot(data.S[i, :data.T[i], -1], label= "gt (radar)", c= 'green')
         
         data_logging.legend_without_duplicate_labels(ax)
-        # ax.set_title( "PEM (Speed of Lead Vehicle)",
-        #              fontdict={'fontsize' :15})
-        ax.set_xlabel("t(20 ms)", fontdict={'fontsize' :12})
-        ax.set_ylabel("Distance (m/s)", fontdict={'fontsize' :12})
+        ax.set_title( "Perception Outputs (Lead Vehicle Distance)",
+                      fontdict={'fontsize' :13})
+        ax.set_xlabel("t(20 ms)", fontdict={'fontsize' :13})
+        ax.set_ylabel("Distance (m)", fontdict={'fontsize' :13})
+        # plt.legend()
         
+        fig.set_size_inches(8, 5)
+        fig.tight_layout()
+            
         plt.show()
         plt.pause(0.8)
-        input(i)
-        plt.clf()
+        
+        # if (real_traj < 0).any() or (gen_traj < 0).any():
+        inp= input(i)
+        if inp == 'y':
+            fig.savefig(f'/home/cosmos/Pictures/figs/{i}', bbox_inches='tight')
+        ax.clear()

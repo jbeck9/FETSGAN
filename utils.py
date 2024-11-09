@@ -113,16 +113,16 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 weights= torch.ones_like(b)
                 weights[~b_mask] = 15
                 
-                zx, r_mean= net.E(x,T, s=s, return_rweights= True)
+                zx, r_mean= net.E(x,T, return_rweights= True)
                 G_x, G_x_bool= net.G(zx, T, mask=mask, s=s)
                 G_x[~b_mask] = minval
                 
                 G_rand, G_rand_bool= net.inf(T, dev, mask=mask, s=s)
-                tmask= mask * (torch.sigmoid(G_rand_bool) < 0.4)[:,:,0]
+                tmask= mask * (torch.sigmoid(G_rand_bool) < 0.15)[:,:,0]
                 G_rand[tmask] = minval
                 
                 mse_x= mse_loss(G_x, x)
-                mse_x[:,:,-1] *= 4
+                mse_x[:,:,-1] = 5 * mse_x[:,:,-1]
                 
                 # mse_x[mask]= mse_x[mask] / (torch.abs(x[mask]) + 1)
                 
@@ -145,19 +145,22 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 label_fake= torch.zeros_like(pred_d)
                 label_fake[~mask] = net.padval
                 
-                adv_d_1, d_fat_1= fat(mse_loss(pred_d, label_real), 0.9)
-                adv_d_2, d_fat_2= fat(mse_loss(pred_d_inf, label_real), 0.9)
+                # adv_d_1, d_fat_1= fat(mse_loss(pred_d, label_real), 0.95)
+                # adv_d_2, d_fat_2= fat(mse_loss(pred_d_inf, label_real), 0.95)
                 
-                # print(d_fat_2[0])
-                # print(mse_loss(pred_d_inf, label_real)[0])
-                # input()
-                
-                # adv_d_1= mse_loss(pred_d, label_real)[mask].mean()
-                # adv_d_2= mse_loss(pred_d_inf, label_real)[mask].mean()
+                adv_d_1= mse_loss(pred_d, label_real)[mask].mean()
+                adv_d_2= mse_loss(pred_d_inf, label_real)[mask].mean()
                 
                 adv_d= adv_d_1 + adv_d_2
                 
-                ge_objective= lam*recon + adv_d + adv_ld + 0.1*bce_x
+                l_dist= mse_loss(G_rand[:,:,0][mask].mean(), x[:,:,0][mask].mean()) + mse_loss(G_rand[:,:,1][mask].mean(), x[:,:,1][mask].mean()) \
+                    # + mse_loss(G_rand[:,:,0][mask].std(), x[:,:,0][mask].std()) + mse_loss(G_rand[:,:,1][mask].std(), x[:,:,1][mask].std())
+                    
+                l_sp= (s[:,:,3] - G_rand[:,:,1])[mask]
+                l_sp[l_sp >= -2]= 0
+                l_sp = 100 * torch.square(l_sp).mean()
+                
+                ge_objective= lam*recon + adv_d + adv_ld + 0.1*bce_x + l_sp# + 2*l_dist
                 # ge_objective= lam*recon + adv_ld
                 ge_objective.backward()
                 Go.step()
@@ -191,6 +194,7 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
             # l_fake_x, _= fat(mse_loss(pred_fake_x, label_fake), 0.8)
             # l_fake_x_inf, _= fat(mse_loss(pred_fake_x_inf, label_fake), 0.8)
             # l_real_x, _= fat(mse_loss(pred_real_x, label_real), 0.8)
+            
             
             d_x_loss= 0.25*l_fake_x + 0.25*l_fake_x_inf + 0.5*l_real_x
             d_x_loss.backward()
@@ -231,13 +235,14 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
             if net.fets:
                 logger.add_scalar("Scalars/Recon", float(recon))
                 logger.add_scalar("Scalars/FAT Index", float(fat_index.mean()))
-                logger.add_scalar("Scalars/D FAT Index", float(d_fat_2.mean()))
+                # logger.add_scalar("Scalars/D FAT Index", float(d_fat_2.mean()))
                 logger.add_scalar("Scalars/Dropout", float(bce_x))
                 logger.add_scalar("Scalars/Feature Adv Gen", float(adv_d))
                 logger.add_scalar("Scalars/Feature Adv", float(d_x_loss))
                 logger.add_scalar("Scalars/Embedding Adv", float(d_z_loss))
                 logger.add_scalar("Scalars/G,E Objective", float(ge_objective))
                 logger.add_scalar("Scalars/Random Weight", float(r_mean))
+                logger.add_scalar("Scalars/Dist Loss", float(l_sp))
                 
                 logger.proj(zx.detach().cpu(), 'Zx')
                 # logger.proj(net.sampler(zx.shape), 'rand')
@@ -257,7 +262,7 @@ def inference(net, data, rsample= sample_uniform):
     #     zx= net.E(x, data.T, s=s)
     #     logger.embed(zx)
     out, b= net.inf(data.T, 'cpu', mask, s)
-    tmask= mask * (torch.sigmoid(b) < 0.4)[:,:,0]
+    tmask= mask * (torch.sigmoid(b) < 0.15)[:,:,0]
     out[tmask] = 0
     
     return out
@@ -267,7 +272,7 @@ def one_step_inf(net, s, zr):
     mask= get_mask(T)
     
     out, b= net.inf(T, models.get_device(s), mask, s, reset_hidden= False, zr= zr)
-    tmask= mask * (torch.sigmoid(b) < 0.4)[:,:,0]
+    tmask= mask * (torch.sigmoid(b) < 0.5)[:,:,0]
     out[tmask] = 0
     
     return out

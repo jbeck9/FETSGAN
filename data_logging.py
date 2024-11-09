@@ -12,7 +12,7 @@ import shutil
 from datetime import datetime
 import json
 
-def save_output(model, output, max_runs=10):
+def save_output(model, output=None, max_runs=10):
     current_datetime = datetime.now()
     dir_name = current_datetime.strftime("%H:%M:%S_%m-%d-%Y")
     dir_name= f"output/runs/{dir_name}"
@@ -29,9 +29,10 @@ def save_output(model, output, max_runs=10):
     
     torch.save(model.state_dict(), f"{dir_name}/model.pth")
     
-    jsdata= json.dumps(output.detach().cpu().tolist())
-    with open(f"{dir_name}/output.json", "w") as jsonFile:
-        jsonFile.write(jsdata)
+    if output is not None:
+        jsdata= json.dumps(output.detach().cpu().tolist())
+        with open(f"{dir_name}/output.json", "w") as jsonFile:
+            jsonFile.write(jsdata)
         
     shutil.copyfile("params.yaml", f"{dir_name}/params.txt")
     
@@ -127,30 +128,30 @@ class logger():
 def legend_without_duplicate_labels(ax):
     handles, labels = ax.get_legend_handles_labels()
     unique = [(h, l) for i, (h, l) in enumerate(zip(handles, labels)) if l not in labels[:i]]
-    l= ax.legend(*zip(*unique), fontsize= '13', edgecolor= 'black', ncols=1)#, loc="upper left")
+    l= ax.legend(*zip(*unique), fontsize= '15', edgecolor= 'black', ncols=1)#, loc="upper left")
     l.get_frame().set_alpha(None)
     l.get_frame().set_facecolor((0, 0, 1, 0))
             
             
-    def ts2img(self, ts, index=0):
-        plt.rcParams["figure.dpi"] = 200
-        plt.rcParams["figure.figsize"] = [5,2]
-        
-        fig, ax= plt.subplots(1,1)
-        ax.plot(ts[:,index])
-        
-        ax.axis('off')
-        fig.tight_layout(pad=0.1)
-        ax.margins(0)
-        fig.canvas.draw()
-        
-        image_from_plot = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        img= image_from_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,)).astype(float)
-        
-        plt.close(fig)
-        
-        plt.rcParams["figure.dpi"] = self.default_plot_settings[0]
-        plt.rcParams["figure.figsize"] = self.default_plot_settings[1]
-        
-        return np.moveaxis(img, 2,0) / 255
+def ts2img(self, ts, index=0):
+    plt.rcParams["figure.dpi"] = 200
+    plt.rcParams["figure.figsize"] = [5,2]
+    
+    fig, ax= plt.subplots(1,1)
+    ax.plot(ts[:,index])
+    
+    ax.axis('off')
+    fig.tight_layout(pad=0.1)
+    ax.margins(0)
+    fig.canvas.draw()
+    
+    image_from_plot = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    img= image_from_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,)).astype(float)
+    
+    plt.close(fig)
+    
+    plt.rcParams["figure.dpi"] = self.default_plot_settings[0]
+    plt.rcParams["figure.figsize"] = self.default_plot_settings[1]
+    
+    return np.moveaxis(img, 2,0) / 255
     

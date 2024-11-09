@@ -168,7 +168,7 @@ class Encoder(nn.Module):
         
         self.S_dim= S_dim
         self.etadim= eta_dim
-        self.Zcat= F_dim + S_dim
+        self.Zcat= F_dim
         self.padval= pad_val
         self.rsample= rsample
         self.Z_dim= Z_dim
@@ -191,14 +191,11 @@ class Encoder(nn.Module):
                                         nn.Sigmoid())
         
         
-    def forward(self, x,T_in, s= None, return_rweights= False):
+    def forward(self, x,T_in, return_rweights= False):
         device= get_device(x)
         
         noise= self.rsample([x.shape[0], self.Z_dim]).to(device)
         # x= torch.cat([x,noise], dim=-1)
-        
-        if self.S_dim > 0:
-            x= torch.cat([x, s], dim=-1)
             
         # x= self.in_linear(x)
         
@@ -242,12 +239,12 @@ class Discriminator(nn.Module):
         
         self.in_linear= nn.Sequential(nn.Linear(self.Zcat, nhidden),
                                         nn.LeakyReLU(0.1),
-                                        nn.Dropout1d(0.05),
+                                        nn.Dropout1d(0.1),
                                         nn.Linear(nhidden, inp_dim))
         
         self.out_linear= nn.Sequential(nn.Linear(nhidden + self.Zcat, nhidden),
                                         nn.LeakyReLU(0.1),
-                                        nn.Dropout1d(0.05),
+                                        nn.Dropout1d(0.1),
                                         nn.Linear(nhidden, 1))
         
     def forward(self, x,T_in, mask= None, s= None):
@@ -263,6 +260,8 @@ class Discriminator(nn.Module):
         skipmask= (torch.rand_like(mask.float()) < 0.2).bool()
         skipmask = skipmask * mask
         xi[skipmask] = 0
+        
+        # xi[:,:,0] = 0
         
         xi_emb= input_padded(xi, self.in_linear, mask, self.padval)
         
