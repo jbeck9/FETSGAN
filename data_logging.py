@@ -11,20 +11,18 @@ import shutil
 
 from datetime import datetime
 import json
+import sys
 
 def save_output(model, output=None, max_runs=10):
     current_datetime = datetime.now()
-    dir_name = current_datetime.strftime("%H:%M:%S_%m-%d-%Y")
+    dir_name = current_datetime.strftime("%H-%M-%S_%m-%d-%Y")
     dir_name= f"output/runs/{dir_name}"
     
-    try: 
-        os.mkdir(dir_name) 
-    except OSError: 
-        pass
-    
-    runs= np.array([datetime.strptime(name,"%H:%M:%S_%m-%d-%Y") for name in os.listdir("output/runs")])
+    os.mkdir(dir_name) 
+
+    runs= np.array([datetime.strptime(name,"%H-%M-%S_%m-%d-%Y") for name in os.listdir("output/runs")])
     if len(runs) > max_runs:
-        direc= min(runs).strftime("%H:%M:%S_%m-%d-%Y")
+        direc= min(runs).strftime("%H-%M-%S_%m-%d-%Y")
         shutil.rmtree(f"output/runs/{direc}")
     
     torch.save(model.state_dict(), f"{dir_name}/model.pth")
@@ -38,8 +36,8 @@ def save_output(model, output=None, max_runs=10):
     
 def load_model(model, path='latest'):
     if path == 'latest':
-        runs= np.array([datetime.strptime(name,"%H:%M:%S_%m-%d-%Y") for name in os.listdir("output/runs")])
-        direc= max(runs).strftime("%H:%M:%S_%m-%d-%Y")
+        runs= np.array([datetime.strptime(name,"%H-%M-%S_%m-%d-%Y") for name in os.listdir("output/runs")])
+        direc= max(runs).strftime("%H-%M-%S_%m-%d-%Y")
         path= f"output/runs/{direc}/model.pth"
     
     model.load_state_dict(torch.load(path))
@@ -75,7 +73,10 @@ class logger():
         
         
     def _launchtb(self):
-        os.system('tensorboard --logdir=' + self.logdir + ">/dev/null 2>&1")
+        if sys.platform == "win32":
+            os.system('tensorboard --logdir=' + self.logdir + ' >nul 2>&1')
+        else:
+            os.system('tensorboard --logdir=' + self.logdir + ">/dev/null 2>&1")
         
     def _launchwb(self, url= "http://localhost:6006/"):
         webbrowser.open(url, new=2)
@@ -102,7 +103,7 @@ class logger():
             plt.rcParams["figure.dpi"] = self.default_plot_settings[0]
             plt.rcParams["figure.figsize"] = self.default_plot_settings[1]
     
-    def plot(self, x, recon, xhat, T, net, device, sample_rate= 20, plot_index= 0, s=None):
+    def plot(self, x, recon, xhat, T, net, device, sample_rate= 10, plot_index= 0, s=None):
         if self.index % sample_rate == 0:
             x= x.cpu()
             recon= recon.cpu()

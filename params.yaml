@@ -1,21 +1,21 @@
 #Model Parameters
-z_dim: 24
-s_dim: 4
-eta_dim: 5
+z_dim: 8
+s_dim: 0
+eta_dim: 2
 rsample: "sample_uniform"
 nhidden: 256
 layers: 2
-pad_val: -2
+pad_val: -500
 
 #Training Parameters
-dataset: "radar"
+dataset: "commaTraj"
 learning_rate: 0.0001
 batch_size: 128
 epochs: 1000
-dis_coef: 0.01
-fat_thres: 50
+dis_coef: 1
+fat_thres: 15
 lsgan: True
-lambda: 0.01
+lambda: 0.05
 use_logger: True
 
 #Procedure

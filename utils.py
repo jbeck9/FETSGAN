@@ -107,26 +107,26 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 Go.zero_grad()
                 Eo.zero_grad()
                 
-                b_mask= x != minval
-                b= b_mask.double()
+                # b_mask= x != minval
+                # b= b_mask.double()
                 
-                weights= torch.ones_like(b)
-                weights[~b_mask] = 15
+                # weights= torch.ones_like(b)
+                # weights[~b_mask] = 15
                 
                 zx, r_mean= net.E(x,T, return_rweights= True)
                 G_x, G_x_bool= net.G(zx, T, mask=mask, s=s)
-                G_x[~b_mask] = minval
+                # G_x[~b_mask] = minval
                 
                 G_rand, G_rand_bool= net.inf(T, dev, mask=mask, s=s)
-                tmask= mask * (torch.sigmoid(G_rand_bool) < 0.15)[:,:,0]
-                G_rand[tmask] = minval
+                # tmask= mask * (torch.sigmoid(G_rand_bool) < 0.15)[:,:,0]
+                # G_rand[tmask] = minval
                 
                 mse_x= mse_loss(G_x, x)
                 mse_x[:,:,-1] = 5 * mse_x[:,:,-1]
                 
                 # mse_x[mask]= mse_x[mask] / (torch.abs(x[mask]) + 1)
                 
-                bce_x= (weights[mask] * bce_loss(G_x_bool[mask], b[mask])).mean()
+                # bce_x= (weights[mask] * bce_loss(G_x_bool[mask], b[mask])).mean()
                 recon, fat_index= fat(mse_x, thres)
                 # fat_index= int(fat_index) + 5
                 # print(fat_index)
@@ -156,11 +156,8 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 l_dist= mse_loss(G_rand[:,:,0][mask].mean(), x[:,:,0][mask].mean()) + mse_loss(G_rand[:,:,1][mask].mean(), x[:,:,1][mask].mean()) \
                     # + mse_loss(G_rand[:,:,0][mask].std(), x[:,:,0][mask].std()) + mse_loss(G_rand[:,:,1][mask].std(), x[:,:,1][mask].std())
                     
-                l_sp= (s[:,:,3] - G_rand[:,:,1])[mask]
-                l_sp[l_sp >= -2]= 0
-                l_sp = 100 * torch.square(l_sp).mean()
                 
-                ge_objective= lam*recon + adv_d + adv_ld + 0.1*bce_x + l_sp# + 2*l_dist
+                ge_objective= lam*recon + adv_d + adv_ld# + 0.1*bce_x
                 # ge_objective= lam*recon + adv_ld
                 ge_objective.backward()
                 Go.step()
@@ -236,13 +233,13 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 logger.add_scalar("Scalars/Recon", float(recon))
                 logger.add_scalar("Scalars/FAT Index", float(fat_index.mean()))
                 # logger.add_scalar("Scalars/D FAT Index", float(d_fat_2.mean()))
-                logger.add_scalar("Scalars/Dropout", float(bce_x))
+                # logger.add_scalar("Scalars/Dropout", float(bce_x))
                 logger.add_scalar("Scalars/Feature Adv Gen", float(adv_d))
                 logger.add_scalar("Scalars/Feature Adv", float(d_x_loss))
                 logger.add_scalar("Scalars/Embedding Adv", float(d_z_loss))
                 logger.add_scalar("Scalars/G,E Objective", float(ge_objective))
                 logger.add_scalar("Scalars/Random Weight", float(r_mean))
-                logger.add_scalar("Scalars/Dist Loss", float(l_sp))
+                # logger.add_scalar("Scalars/Dist Loss", float(l_sp))
                 
                 logger.proj(zx.detach().cpu(), 'Zx')
                 # logger.proj(net.sampler(zx.shape), 'rand')
