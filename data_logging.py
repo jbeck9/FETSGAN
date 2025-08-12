@@ -87,7 +87,7 @@ class logger():
     def embed(self, data, plot_dim=0):
         self.writer.add_embedding(data, global_step=self.index)
         
-    def proj(self, data, label, sample_rate= 100):
+    def proj(self, data, label, sample_rate= 10):
         if self.index % sample_rate == 0:
             
             plt.rcParams["figure.dpi"] = 200
@@ -107,7 +107,7 @@ class logger():
         if self.index % sample_rate == 0:
             x= x.cpu()
             recon= recon.cpu()
-            xhat= xhat.cpu()
+            # xhat= xhat.cpu()
             
             plt.rcParams["figure.dpi"] = 200
             plt.rcParams["figure.figsize"] = [5,2]
@@ -117,7 +117,7 @@ class logger():
                 fig, ax= plt.subplots(1,1)
                 ax.plot(x[:T,i], label="x")
                 ax.plot(recon[:T,i], label="recon")
-                ax.plot(xhat[:T,i], label= "$\hat{x}$")
+                # ax.plot(xhat[:T,i], label= "$\hat{x}$")
                 plt.legend()
                 
                 self.writer.add_figure(f"Sample Plot {i}", fig, self.index)
