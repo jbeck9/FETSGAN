@@ -1,6 +1,7 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
+import torch.nn.functional as F
 
 import dataset
 import models
@@ -62,7 +63,7 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
     
     
     if net.fets:
-        LDo= optim.Adam(net.LD.parameters(), lr=lr)
+        LDo= optim.Adam(net.LD.parameters(), lr=0.5*lr)
         Eo= optim.Adam(net.E.parameters(), lr=lr)
         
         LDs= optim.lr_scheduler.ExponentialLR(LDo, 0.1)
@@ -114,7 +115,7 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 # G_rand[tmask] = minval
                 
                 mse_x= mse_loss(G_x, x)
-                mse_x[:,:,0] *= 0.5
+                mse_x[:,:,0] *= 0.1
                 
                 # mse_x[mask]= mse_x[mask] / (torch.abs(x[mask]) + 1)
                 
@@ -129,22 +130,23 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 pred_ld= net.LD(zx)
                 adv_ld= gan_loss(pred_ld, torch.ones_like(pred_ld))
                 
-                pred_d= net.D(G_x, T, mask, s)
+                # pred_d= net.D(G_x, T, mask, s)
                 pred_d_inf= net.D(G_rand, T, mask, s)
                 
-                label_real= torch.ones_like(pred_d)
+                label_real= torch.ones_like(pred_d_inf)
                 label_real[~mask] = net.padval
                 
-                label_fake= torch.zeros_like(pred_d)
+                label_fake= torch.zeros_like(pred_d_inf)
                 label_fake[~mask] = net.padval
                 
                 # adv_d_1, d_fat_1= fat(mse_loss(pred_d, label_real), 0.95)
                 # adv_d_2, d_fat_2= fat(mse_loss(pred_d_inf, label_real), 0.95)
                 
-                adv_d_1= gan_loss(pred_d[mask], label_real[mask]).mean()
+                # adv_d_1= gan_loss(pred_d[mask], label_real[mask]).mean()
                 adv_d_2= gan_loss(pred_d_inf[mask], label_real[mask]).mean()
                 
-                adv_d= (adv_d_1 + adv_d_2) / 2
+                # adv_d= (adv_d_1 + adv_d_2) / 2
+                adv_d= adv_d_2
                 
                 # l_dist= mse_loss(G_rand[:,:,0][mask].mean(), x[:,:,0][mask].mean()) + mse_loss(G_rand[:,:,1][mask].mean(), x[:,:,1][mask].mean()) \
                     # + mse_loss(G_rand[:,:,0][mask].std(), x[:,:,0][mask].std()) + mse_loss(G_rand[:,:,1][mask].std(), x[:,:,1][mask].std())
@@ -177,17 +179,17 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
             #------------------
             Do.zero_grad()
             
-            pred_fake_x= net.D(G_x.detach(), T, mask, s)
+            # pred_fake_x= net.D(G_x.detach(), T, mask, s)
             pred_fake_x_inf= net.D(G_rand.detach(), T, mask, s)
             pred_real_x= net.D(x,T, mask, s)
             
             
-            l_fake_x= gan_loss(pred_fake_x[mask], torch.zeros_like(pred_fake_x)[mask])
-            l_fake_x_inf= gan_loss(pred_fake_x_inf[mask], torch.zeros_like(pred_fake_x)[mask])
+            # l_fake_x= gan_loss(pred_fake_x[mask], torch.zeros_like(pred_fake_x)[mask])
+            l_fake_x_inf= gan_loss(pred_fake_x_inf[mask], torch.zeros_like(pred_fake_x_inf)[mask])
             l_real_x= gan_loss(pred_real_x[mask], torch.ones_like(pred_real_x)[mask])
             
             
-            d_x_loss= 0.25*l_fake_x + 0.25*l_fake_x_inf + 0.5*l_real_x
+            d_x_loss= 0.5*l_fake_x_inf + 0.5*l_real_x
             d_x_loss.backward()
             
             Do.step()

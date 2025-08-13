@@ -103,7 +103,7 @@ class Generator(nn.Module):
         z_pack = nn.utils.rnn.pack_padded_sequence(
             input=zi_emb, 
             lengths=T_in, 
-            batch_first=True, 
+            batch_first=True,
             enforce_sorted=False
         )
         
@@ -297,7 +297,7 @@ class Encoder(nn.Module):
     
 class Discriminator(nn.Module):
     def __init__(self, F_dim,S_dim, 
-                 inp_dim=50, nhidden=32, layers=2, pad_val= -2):
+                 inp_dim=32, nhidden=32, layers=2, pad_val= -2):
         super(Discriminator, self).__init__()
         
         self.S_dim= S_dim
@@ -312,13 +312,13 @@ class Discriminator(nn.Module):
         )
         
         self.in_linear= nn.Sequential(nn.Linear(self.Zcat, nhidden),
-                                        nn.GELU(),
-                                        nn.Dropout1d(0.1),
+                                        nn.LeakyReLU(0.2),
+                                        nn.Dropout1d(0.2),
                                         nn.Linear(nhidden, inp_dim))
         
         self.out_linear= nn.Sequential(nn.Linear(nhidden + self.Zcat, nhidden // 2),
                                         nn.LeakyReLU(0.2),
-                                        nn.Dropout1d(0.1),
+                                        nn.Dropout1d(0.2),
                                         nn.Linear(nhidden // 2, 1))
         
     def forward(self, x,T_in, mask= None, s= None):
@@ -328,14 +328,6 @@ class Discriminator(nn.Module):
         
         if self.S_dim != 0:
             xi= torch.cat([xi, s], dim=-1)
-            
-        # xi = xi + 0.05*torch.randn_like(xi)
-            
-        # skipmask= (torch.rand_like(mask.float()) < 0.2).bool()
-        # skipmask = skipmask * mask
-        # xi[skipmask] = 0
-        
-        # xi[:,:,0] = 0
         
         xi_emb= input_padded(xi, self.in_linear, mask, self.padval)
         
@@ -405,7 +397,7 @@ class fetsGan(nn.Module):
         self.sampler= rsample
         
         self.G= Generator(Z_dim, S_dim, F_dim, eta_dim, inp_dim, rsample, nhidden, layers, pad_val)
-        self.D= Discriminator(F_dim, S_dim, inp_dim, nhidden, layers, pad_val)
+        self.D= Discriminator(F_dim, S_dim, inp_dim, nhidden, pad_val=pad_val)
         
         if self.fets:
             self.E= Encoder(Z_dim, S_dim, F_dim, eta_dim, inp_dim, rsample, nhidden, layers, pad_val)
