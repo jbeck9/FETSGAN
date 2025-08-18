@@ -1,5 +1,5 @@
 #Model Parameters
-z_dim: 32
+z_dim: 16
 s_dim: 0
 eta_dim: 8
 rsample: "sample_uniform"
@@ -9,17 +9,17 @@ pad_val: -500
 
 #Training Parameters
 dataset: "commaTraj"
-learning_rate: 0.0002
+learning_rate: 0.0001
 batch_size: 256
-epochs: 2000
-dis_coef: 0.2
+epochs: 600
+dis_coef: 0.1
 fat_thres: 1
 lsgan: False
 lambda: 1
 use_logger: True
 
 #Procedure
-load_model: False
+load_model: True
 run_training: True
 run_inf: False
 save_output: True

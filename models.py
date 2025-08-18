@@ -293,7 +293,18 @@ class Encoder(nn.Module):
             return out, 1
         else:
             return out
-        
+
+def normalize_tensor(tensor, mask):
+   masked_tensor = tensor * mask.unsqueeze(-1)
+   sums = masked_tensor.sum(dim=1, keepdim=True)
+   counts = mask.sum(dim=1, keepdim=True).unsqueeze(-1)
+   means = sums / counts
+   centered = masked_tensor - means * mask.unsqueeze(-1)
+   squared_diffs = centered ** 2
+   variances = squared_diffs.sum(dim=1, keepdim=True) / counts
+   stds = torch.sqrt(variances + 1e-8)
+   normalized = centered / stds
+   return normalized * mask.unsqueeze(-1)    
     
 class Discriminator(nn.Module):
     def __init__(self, F_dim,S_dim, 
@@ -313,18 +324,19 @@ class Discriminator(nn.Module):
         
         self.in_linear= nn.Sequential(nn.Linear(self.Zcat, nhidden),
                                         nn.LeakyReLU(0.2),
-                                        nn.Dropout1d(0.2),
+                                        nn.Dropout1d(0.4),
                                         nn.Linear(nhidden, inp_dim))
         
         self.out_linear= nn.Sequential(nn.Linear(nhidden + self.Zcat, nhidden // 2),
                                         nn.LeakyReLU(0.2),
-                                        nn.Dropout1d(0.2),
+                                        nn.Dropout1d(0.4),
                                         nn.Linear(nhidden // 2, 1))
         
     def forward(self, x,T_in, mask= None, s= None):
         seqlen= max(T_in)
         
-        xi= torch.clone(x)
+        xi= normalize_tensor(x, mask)
+        # xi= torch.clone(x)
         
         if self.S_dim != 0:
             xi= torch.cat([xi, s], dim=-1)
@@ -397,7 +409,7 @@ class fetsGan(nn.Module):
         self.sampler= rsample
         
         self.G= Generator(Z_dim, S_dim, F_dim, eta_dim, inp_dim, rsample, nhidden, layers, pad_val)
-        self.D= Discriminator(F_dim, S_dim, inp_dim, nhidden, pad_val=pad_val)
+        self.D= Discriminator(F_dim, S_dim, nhidden // 4, nhidden // 4, pad_val=pad_val)
         
         if self.fets:
             self.E= Encoder(Z_dim, S_dim, F_dim, eta_dim, inp_dim, rsample, nhidden, layers, pad_val)

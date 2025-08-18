@@ -157,7 +157,7 @@ def train(net, data, lr, thres= 0.1, batch_size= 256, epochs=2000, dis_coef=2, l
                 
                 adv_linear= adv_ld + 10*uniform_reg
                 
-                ge_objective= lam*recon + adv_d + adv_linear# + 0.1*bce_x
+                ge_objective= lam*recon + adv_linear + 0.1*adv_d# + 0.1*bce_x
                 # ge_objective= lam*recon + adv_linear
                 ge_objective.backward()
                 Go.step()
@@ -256,8 +256,8 @@ def inference(net, data, rsample= sample_uniform):
     #     zx= net.E(x, data.T, s=s)
     #     logger.embed(zx)
     out, b= net.inf(data.T, 'cpu', mask, s)
-    tmask= mask * (torch.sigmoid(b) < 0.15)[:,:,0]
-    out[tmask] = 0
+    # tmask= mask * (torch.sigmoid(b) < 0.15)[:,:,0]
+    # out[tmask] = 0
     
     return out
 
